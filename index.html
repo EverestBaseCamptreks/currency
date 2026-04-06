@@ -425,57 +425,56 @@
     return { engDate: engDateStr, engDay: engDayStr, rawDate: nepDate };
   }
 
-  // Nepali date & day mapping (simple static conversion based on reference)
-  // To avoid huge library, we'll create an approximate converter using a base offset from a known BS date.
-  // Since Nepali calendar is complex, but for demonstration we create a consistent mapping that shows realistic
-  // Nepali month and day names using a reliable algorithm (mapping English date to BS).
-  // We'll implement a deterministic mapping with fixed reference: 2026 April 6 AD = 2082 Chaitra 24 BS (approx)
-  // Actually today demo: but we generate consistently for any date. For robust UI, we compute based on known offset.
-  // Use a more elegant method: predefine Nepali month names and approximate day diff from a reference.
-  // Reference point: 2026-04-06 (Gregorian) -> 2082-12-24 BS (Chaitra 24). We'll compute difference in days and adjust.
-  // For correctness across year, we embed a lightweight logic with BS year/month lengths.
-  // This ensures every date shows believable Nepali date.
-  
+  // CORRECTED: Nepali date conversion - Reference point: April 6, 2026 AD = Chaitra 23, 2082 BS
   const NEPALI_MONTHS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
   const NEPALI_DAYS = ["Aaitabar", "Sombar", "Mangalbar", "Budhabar", "Bihibar", "Shukrabar", "Sanibar"];
-  // Reference Gregorian date: 2026-04-06 -> BS: 2082-12-24 (Chaitra 24)
+  
+  // Reference: 2026-04-06 (April 6, 2026) -> 2082-11-23 (Chaitra 23)
   const REF_GREG = new Date(Date.UTC(2026, 3, 6)); // month 3 = April
   const REF_BS_YEAR = 2082;
   const REF_BS_MONTH = 11; // 0-indexed: Chaitra = 11
-  const REF_BS_DAY = 24;
+  const REF_BS_DAY = 23;   // CORRECTED: Chaitra 23, not 24
   
-  // days in months for BS (non-leap year approx, but simple array for typical nepali months)
-  // real BS has variable days 29-32 but for demo we keep accurate enough for visual
   function getBsDaysInMonth(year, month) {
-    // typical patterns: Baisakh(0)=31, Jestha=31/32, Ashadh=31/32.. but for simplicity we use standard base.
-    // to improve realism, we use standard reference: most months have 31/32 days. but we'll compute offset reliably by day diff.
-    // Actually easier: using precomputed BS epoch with day count algorithm.
-    // We'll compute total days from REF_GREG to target date, then add to BS reference.
-    const bsMonthDays = [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 30]; // approximate typical
-    // adjust for year variations - for demo works within few days accuracy (good for UI)
-    if (year === 2082 && month === 11) return 30; // chaitra 2082 has 30 days for consistency
+    // Standard Nepali month lengths (approximate, handles most cases)
+    const bsMonthDays = [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 30];
+    // Adjust for specific year variations if needed
+    if (year === 2082 && month === 11) return 30; // Chaitra 2082 has 30 days
+    if (year === 2083 && month === 0) return 31;  // Baisakh 2083
     return bsMonthDays[month];
   }
   
   function gregorianToBs(date) {
-    // calculate difference in days from reference
+    // Calculate difference in days from reference
     const targetUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
     const refUTC = Date.UTC(REF_GREG.getFullYear(), REF_GREG.getMonth(), REF_GREG.getDate());
     let diffDays = Math.floor((targetUTC - refUTC) / (1000 * 60 * 60 * 24));
+    
     let bsYear = REF_BS_YEAR;
     let bsMonth = REF_BS_MONTH;
     let bsDay = REF_BS_DAY;
+    
     bsDay += diffDays;
-    while (true) {
-      let daysInMonth = getBsDaysInMonth(bsYear, bsMonth);
-      if (bsDay <= daysInMonth) break;
-      bsDay -= daysInMonth;
+    
+    // Adjust for month/year boundaries
+    while (bsDay > getBsDaysInMonth(bsYear, bsMonth)) {
+      bsDay -= getBsDaysInMonth(bsYear, bsMonth);
       bsMonth++;
       if (bsMonth >= 12) {
         bsMonth = 0;
         bsYear++;
       }
     }
+    
+    while (bsDay <= 0) {
+      bsMonth--;
+      if (bsMonth < 0) {
+        bsMonth = 11;
+        bsYear--;
+      }
+      bsDay += getBsDaysInMonth(bsYear, bsMonth);
+    }
+    
     return { year: bsYear, month: bsMonth, day: bsDay };
   }
   
@@ -483,8 +482,7 @@
     const nepDate = getNepalTimeDate();
     const bs = gregorianToBs(nepDate);
     const monthName = NEPALI_MONTHS[bs.month];
-    const dayIndex = nepDate.getDay(); // 0 = Sunday, but Nepali: Aaitabar = Sunday
-    // Nepali day mapping: Sunday -> Aaitabar (index0)
+    const dayIndex = nepDate.getDay(); // 0 = Sunday
     const nepaliDayName = NEPALI_DAYS[dayIndex];
     const formattedNepDate = `${bs.year} ${monthName} ${bs.day}`;
     document.getElementById('nepaliDate').innerText = formattedNepDate;
@@ -524,7 +522,6 @@
   updateImportantUI();
   
   // ---------- TO-DO LIST per day (tasks stored by current Nepal date YYYY-MM-DD) ----------
-  // Each day has its own list of tasks: { id, text, completed }
   function getStorageKey() {
     const nepDateForStore = getNepalTimeDate();
     const yyyy = nepDateForStore.getFullYear();
@@ -533,7 +530,7 @@
     return `todo_nepal_${yyyy}-${mm}-${dd}`;
   }
   
-  let currentTasks = []; // array of { id, text, completed }
+  let currentTasks = [];
   
   function saveTasks() {
     const key = getStorageKey();
@@ -546,7 +543,7 @@
     if (stored) {
       currentTasks = JSON.parse(stored);
     } else {
-      // sample starter tasks to showcase
+      // Sample starter tasks for the day
       currentTasks = [
         { id: Date.now() + 1, text: "Review project proposal", completed: false },
         { id: Date.now() + 2, text: "Meditate 10 min", completed: false },
@@ -554,7 +551,6 @@
       saveTasks();
     }
     renderTasksList();
-    // Also check pending tasks notification (but not on load automatically, only on demand)
     checkPendingTasksAndNotify(false);
   }
   
@@ -576,7 +572,6 @@
         task.completed = e.target.checked;
         saveTasks();
         renderTasksList();
-        // If marked as completed, no notification for this task
         if (task.completed) {
           showNotification(`✓ "${task.text}" completed!`, 1500);
         } else {
@@ -604,7 +599,6 @@
     });
   }
   
-  // add new task
   function addNewTask() {
     const input = document.getElementById('taskInput');
     const text = input.value.trim();
@@ -624,9 +618,6 @@
     showNotification(`📌 Task added: "${text}"`, 1500);
   }
   
-  // Notification logic: Notify if any task is NOT completed.
-  // It can be triggered manually or automatically at a certain time (like 9PM simulation)
-  // We also attach a periodic check every hour but also on window load and date change (midnight)
   function showNotification(message, duration = 2800) {
     const snack = document.getElementById('notificationSnack');
     snack.innerText = message;
@@ -646,43 +637,40 @@
     }
   }
   
-  // Auto midnight detection: if date changes, reload tasks (since new day)
+  // Auto midnight detection
   let lastDateCheck = null;
   function monitorDateChange() {
     const nowNep = getNepalTimeDate();
     const todayStr = `${nowNep.getFullYear()}-${nowNep.getMonth()}-${nowNep.getDate()}`;
     if (lastDateCheck !== todayStr) {
       lastDateCheck = todayStr;
-      loadTasksForToday(); // fresh tasks for new day
-      // after loading new day tasks, also check pending for new day (can be empty)
+      loadTasksForToday();
       showNotification("🔄 New day! Your to-do list updated for today.", 2000);
     }
   }
   
-  // periodic check for pending tasks (every 30 min) and also simulate "end of day" reminder at 9PM
+  // Periodic checks
   setInterval(() => {
     checkPendingTasksAndNotify(false);
   }, 30 * 60 * 1000);
   
-  // Evening reminder at 21:00 Nepal time approx (check each minute)
   function checkEveningReminder() {
     const nepDate = getNepalTimeDate();
     const hours = nepDate.getHours();
-    const minutes = nepDate.getMinutes();
-    // once at 9:00 PM to 9:05 PM
-    if (hours === 21 && minutes === 0) {
+    if (hours === 21) { // 9 PM
       const pendingCount = currentTasks.filter(t => !t.completed).length;
       if (pendingCount > 0) {
         showNotification(`🌙 Night reminder: You have ${pendingCount} incomplete tasks. Review them!`, 5000);
       }
     }
   }
+  
   setInterval(() => {
     checkEveningReminder();
     monitorDateChange();
   }, 30000);
   
-  // initialize everything
+  // Initialize everything
   document.getElementById('addTaskBtn').addEventListener('click', addNewTask);
   document.getElementById('taskInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addNewTask();
@@ -690,7 +678,7 @@
   
   loadTasksForToday();
   monitorDateChange();
-  // initial pending check gentle
+  
   setTimeout(() => {
     const pendingCount = currentTasks.filter(t => !t.completed).length;
     if (pendingCount > 0) {
